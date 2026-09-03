@@ -69,7 +69,7 @@ export default function History() {
                       <p className="text-sm text-ink-soft mt-0.5">
                         {formatTime(t.created_at)}
                         {" · "}
-                        {t.status === "reversed" ? "Reversed" : "Completed"}
+                        {t.status === "reversed" ? "Cancelled" : t.status === "pending_hold" ? "SafeHold" : "Completed"}
                         {t.concern_level && level && (
                           <>
                             {" · "}
@@ -80,7 +80,7 @@ export default function History() {
                     </div>
                     <span
                       className={`text-[15px] font-medium whitespace-nowrap ml-3 ${
-                        t.status === "reversed" ? "text-ink-soft line-through" : "text-ink"
+                        t.status === "reversed" ? "text-ink-soft line-through" : t.status === "pending_hold" ? "text-amber" : "text-ink"
                       }`}
                     >
                       -{formatCurrency(t.amount)}

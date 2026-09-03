@@ -2,68 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulseSoft { 0%,100% { box-shadow: 0 0 0 0 rgba(82,115,111,.08); } 50% { box-shadow: 0 0 0 7px rgba(82,115,111,0); } }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(12px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
 
 @layer base {
-  body {
-    @apply bg-bg text-ink font-body antialiased;
-  }
-  h1, h2, h3, h4 {
-    @apply font-heading text-ink;
-  }
-  :focus-visible {
-    outline: 2px solid #252525;
-    outline-offset: 2px;
-  }
-  button {
-    font-family: inherit;
-  }
+  body { @apply bg-bg text-ink font-body antialiased; background-image: radial-gradient(circle at 15% 0%, rgba(255,255,255,.9), transparent 28rem); }
+  h1,h2,h3,h4 { @apply font-heading text-ink; }
+  :focus-visible { outline: 2px solid #252525; outline-offset: 3px; }
+  button { font-family: inherit; }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-ink text-white rounded-md px-5 py-3 text-[15px] font-medium
-           transition-colors duration-200 hover:bg-black
-           disabled:opacity-40 disabled:cursor-not-allowed;
-  }
-  .btn-secondary {
-    @apply bg-transparent text-ink border border-border rounded-md px-5 py-3 text-[15px] font-medium
-           transition-colors duration-200 hover:bg-surface-soft
-           disabled:opacity-40 disabled:cursor-not-allowed;
-  }
-  .input-field {
-    @apply w-full bg-surface border border-border rounded-md px-4 py-3 text-[15px]
-           text-ink placeholder:text-ink-soft/70
-           focus:border-ink focus:outline-none transition-colors duration-150;
-  }
-  .card {
-    @apply bg-surface border border-border rounded-lg;
-  }
+  .btn-primary { @apply bg-ink text-white rounded-xl px-5 py-3 text-[15px] font-semibold transition-all duration-200 hover:bg-black hover:-translate-y-px shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0; }
+  .btn-secondary { @apply bg-surface text-ink border border-border rounded-xl px-5 py-3 text-[15px] font-semibold transition-all duration-200 hover:bg-surface-soft hover:border-ink/20 disabled:opacity-40 disabled:cursor-not-allowed; }
+  .input-field { @apply w-full bg-surface border border-border rounded-xl px-4 py-3.5 text-[15px] text-ink placeholder:text-ink-soft/60 focus:border-ink focus:outline-none focus:ring-4 focus:ring-ink/5 transition-all; }
+  .card { @apply bg-surface border border-border rounded-2xl shadow-[0_1px_2px_rgba(37,37,37,.03)]; }
+  .nav-item { @apply flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-ink-soft transition-all duration-150 hover:bg-surface-soft hover:text-ink; }
+  .nav-item-active { @apply bg-beige text-ink font-semibold; }
+  .mobile-nav { @apply flex flex-col items-center justify-center gap-1 py-1.5 text-[10px] text-ink-soft; }
+  .mobile-nav-active { @apply text-ink font-semibold; }
+  .brand-mark { @apply w-9 h-9 rounded-xl bg-ink text-white flex items-center justify-center; }
+  .pill { @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold; }
+  .step-dot { @apply w-7 h-7 rounded-full border border-border bg-surface text-[11px] font-semibold text-ink-soft flex items-center justify-center shrink-0; }
+  .step-dot-active { @apply border-ink bg-ink text-white; }
+  .step-dot-done { @apply border-sage bg-sage text-white; }
+  .step-line { @apply h-px bg-border flex-1 mx-2; }
+  .step-line-done { @apply bg-sage; }
+  .eyebrow { @apply text-[11px] font-bold uppercase tracking-[.14em] text-ink-soft; }
 }
+
+.inclusive-mode { font-size: 110%; }
+.inclusive-mode .btn-primary, .inclusive-mode .btn-secondary { min-height: 52px; }
+.inclusive-mode .text-sm { font-size: .95rem; }

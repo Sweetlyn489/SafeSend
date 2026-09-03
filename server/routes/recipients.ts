@@ -11,7 +11,7 @@ router.get("/", async (req, res) => {
       return res.status(400).json({ error: "userId is required" });
     }
     const recipients = await query(
-      "SELECT * FROM recipients WHERE user_id = $1 ORDER BY name ASC",
+      "SELECT * FROM recipients WHERE user_id = $1 AND is_saved = TRUE ORDER BY name ASC",
       [userId]
     );
     res.json(recipients);
@@ -35,8 +35,8 @@ router.post("/", async (req, res) => {
     }
 
     const rows = await query(
-      `INSERT INTO recipients (user_id, name, upi_id, profession)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO recipients (user_id, name, upi_id, profession, is_saved)
+       VALUES ($1, $2, $3, $4, TRUE) RETURNING *`,
       [userId, name.trim(), upiId.trim(), profession ? profession.trim() : null]
     );
     res.status(201).json(rows[0]);

@@ -11,6 +11,7 @@ export interface Recipient {
   name: string;
   upi_id: string;
   profession: string | null;
+  is_saved?: boolean;
 }
 
 export type ConcernLevel = "LOW" | "MODERATE" | "HIGH";
@@ -31,7 +32,7 @@ export interface SafetyCheckResult {
   summary: string;
 }
 
-export type TransactionStatus = "completed" | "reversed";
+export type TransactionStatus = "pending_hold" | "completed" | "reversed";
 
 export interface Transaction {
   id: number;

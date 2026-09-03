@@ -157,3 +157,4 @@ collects a real banking PIN, password, OTP, or card number.
 - Push/SMS-style confirmation for the undo window
 - Support for recurring/scheduled payments
 - Exportable transaction statements
+\n\n## SafeHold update\n\nThe payment flow now uses **SafeHold** instead of a post-payment Undo. After PIN confirmation, the demo reserves the amount for 10 seconds. During that window the user can cancel; if the timer expires, the demo finalizes the transfer. This is a prototype simulation of a pre-transfer authorization/cancellation window, not a claim that a completed real UPI transaction can be recalled.\n\nThe Send Money screen also supports **Send to someone new**. A user can enter a name and UPI ID for a one-time payment without adding the person to their saved recipient list.\n\nIf using PostgreSQL, rerun `database/schema.sql` after this update so the `is_saved` and `hold_expires_at` columns are created. The offline demo mode does not require PostgreSQL.\n

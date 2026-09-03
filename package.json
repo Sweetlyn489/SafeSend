@@ -2,12 +2,15 @@
   "name": "safesend",
   "private": true,
   "version": "1.0.0",
-  "description": "SafeSend — Think before you send. A payment safety checkpoint MVP.",
+  "description": "SafeSend \u2014 Think before you send. A payment safety checkpoint MVP.",
   "scripts": {
     "dev:client": "npm --prefix client run dev",
     "dev:server": "npm --prefix server run dev",
     "install:all": "npm install --prefix client && npm install --prefix server",
     "build:client": "npm --prefix client run build",
-    "build:server": "npm --prefix server run build"
+    "build:server": "npm --prefix server run build",
+    "predev:client": "npm --prefix client install",
+    "predev:server": "npm --prefix server install",
+    "setup": "npm run install:all"
   }
 }

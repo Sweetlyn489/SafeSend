@@ -89,7 +89,7 @@ export async function runSafetyCheck(
 
   const priorTxns = await query<Transaction>(
     `SELECT id, amount, created_at FROM transactions
-     WHERE user_id = $1 AND recipient_id = $2 AND status != 'reversed'
+     WHERE user_id = $1 AND recipient_id = $2 AND status = 'completed'
      ORDER BY created_at ASC`,
     [userId, recipientId]
   );

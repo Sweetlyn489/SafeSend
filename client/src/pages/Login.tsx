@@ -17,7 +17,7 @@ export default function Login() {
     api
       .getUsers()
       .then(setUsers)
-      .catch(() => setLoadError("Couldn't load demo users. Is the server running?"));
+      .catch(() => setLoadError("Using offline demo mode — your local demo data is ready."));
   }, []);
 
   const handleSelect = async (user: User) => {

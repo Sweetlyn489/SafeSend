@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
 import { SessionProvider, useSession } from "./context/SessionContext";
 import Navbar from "./components/Navbar";
 import Login from "./pages/Login";
@@ -10,6 +11,10 @@ import Settings from "./pages/Settings";
 
 function AppShell() {
   const { user, loading } = useSession();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("inclusive-mode", localStorage.getItem("safesend-inclusive") === "1");
+  }, []);
 
   if (loading) {
     return (
