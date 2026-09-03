@@ -1,148 +1,159 @@
-# SafeSend Backend
+# SafeSend
 
-SafeSend is a small hackathon MVP backend that adds a payment-safety checkpoint before a prototype digital payment is confirmed.
+**Think before you send.**
 
-## Requirements
+A digital payment safety checkpoint. Before a payment goes through, SafeSend
+compares it against the sender's own past behaviour and surfaces a short,
+plain-language context check — not a fraud verdict.
+
+## Problem
+
+Most payment apps ask a person to confirm a transfer with almost no context.
+A slip of the thumb, a scam recipient with a name close to a saved contact,
+or a payment that's unusually large or oddly timed all look identical to a
+routine payment — until the money is already gone.
+
+## Solution
+
+SafeSend adds one short checkpoint before the money moves. It compares the
+payment being made right now against the sender's own history — who they
+usually pay, how much, and roughly when — and explains anything that stands
+out, in plain language. The sender decides what to do with that context;
+SafeSend never blocks a payment or claims to detect fraud.
+
+## Features
+
+- **Demo login** — pick one of three sample accounts, no passwords.
+- **Dashboard** — balance, a Send Money shortcut, and recent activity.
+- **Recipients** — saved payees with an optional profession field.
+- **Send Money** — pick a recipient and amount, with balance/amount validation.
+- **SafeSend Check** — checks familiarity, amount pattern, timing pattern, and
+  similar-recipient names, then explains the result as LOW / MODERATE / HIGH
+  concern with plain-language reasons (never a numeric "fraud score").
+- **Payment Review** — final summary before authentication.
+- **Simulated UPI PIN** — a demo-only 6-digit PIN pad.
+- **10-second undo** — a real countdown to reverse a payment right after it
+  completes, with balance and history updated live.
+- **Transaction history** — grouped by day, with status and concern level.
+
+## Tech stack
+
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS, React Router, Lucide React
+- **Backend:** Node.js, Express, TypeScript
+- **Database:** PostgreSQL
+
+## Architecture
+
+```text
+safesend/
+├── client/            React + Vite frontend
+│   └── src/
+│       ├── components/  Reusable UI (Navbar, SafetyCheck, PinModal, UndoTimer, ...)
+│       ├── pages/       Route-level screens (Login, Home, SendMoney, ...)
+│       ├── context/     SessionContext — current demo user + balance
+│       ├── data/        Static UI copy (demo taglines, demo PIN)
+│       ├── utils/       Formatting + display-style helpers
+│       └── api.ts       Thin fetch client for the backend
+│
+├── server/            Express + TypeScript backend
+│   ├── routes/          recipients, payments, transactions, users
+│   ├── services/
+│   │   └── safetyEngine.ts   The SafeSend Check — all scoring logic lives here
+│   └── database.ts      PostgreSQL connection pool
+│
+└── database/
+    └── schema.sql      Tables + demo seed data
+```
+
+The frontend never computes safety logic itself — every SafeSend Check is
+run server-side in `safetyEngine.ts` and returned as plain-language reasons.
+
+## Setup
+
+### Prerequisites
+
 - Node.js 18+
-- PostgreSQL 14+
-- npm
+- A local PostgreSQL server
 
-## PostgreSQL setup
+### 1. Install dependencies
 
-Create the database:
+```bash
+npm run install:all
+```
+
+### 2. Create the database and load the schema
 
 ```bash
 createdb safesend
+psql -U postgres -d safesend -f database/schema.sql
 ```
 
-Apply the schema and demo data:
+This also seeds three demo users, their recipients, and enough transaction
+history for every SafeSend Check scenario to work out of the box.
+
+### 3. Configure environment variables
 
 ```bash
-psql -d safesend -f database/schema.sql
+cp .env.example server/.env
 ```
 
-If `createdb` is unavailable, create a database named `safesend` using your PostgreSQL client, then run the `psql` command.
+Edit `server/.env` if your local Postgres uses different credentials.
 
-## Environment
+### 4. Run the app
 
-Copy `.env.example` to `.env` inside `server/`:
+In two terminals:
 
 ```bash
-cd server
+npm run dev:server   # http://localhost:4000
+npm run dev:client   # http://localhost:5173
 ```
 
-Windows:
+Open http://localhost:5173 — the Vite dev server proxies `/api` requests to
+the backend automatically.
 
-```powershell
-copy ..\.env.example .env
-```
+## Demo users
 
-macOS/Linux:
+| Name  | Starting balance |
+|-------|-------------------|
+| Rahul | ₹50,000 |
+| Priya | ₹32,000 |
+| Arun  | ₹18,500 |
 
-```bash
-cp ../.env.example .env
-```
+No passwords — just tap a name on the login screen.
 
-Set `DATABASE_URL` to your local PostgreSQL connection string.
+## Demo UPI PIN
 
-## Install and run
+**`123456`** for every account. This is a simulated PIN only; SafeSend never
+collects a real banking PIN, password, OTP, or card number.
 
-From the `server` directory:
+## Try the SafeSend Check scenarios (as Rahul)
 
-```bash
-npm install
-npm run build
-npm run dev
-```
+- **Normal payment:** pay **Priya Sharma** ₹4,000 → LOW concern.
+- **Unusual amount:** pay **Rahul Kumar** ₹18,000 (his usual range is
+  ₹2,000–₹3,000) → MODERATE/HIGH concern.
+- **Similar recipient:** paying **Rahul Kumar** also surfaces a warning
+  because a saved recipient named **Rohit Kumar** is a close name match.
+- **Timing difference:** pay **City Power Board** → flagged as earlier than
+  usual, since it's normally paid on a ~30-day cycle and the last payment was
+  only 15 days ago.
 
-Production start after building:
+## API endpoints
 
-```bash
-npm start
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| GET  | `/api/users` | List demo users (for login) |
+| GET  | `/api/users/:id` | Get one user |
+| GET  | `/api/recipients?userId=` | List a user's saved recipients |
+| POST | `/api/recipients` | Add a recipient (`userId, name, upiId, profession?`) |
+| POST | `/api/payments/check` | Run the SafeSend Check (`userId, recipientId, amount`) |
+| POST | `/api/payments/confirm` | Confirm a payment with the demo PIN |
+| POST | `/api/payments/undo` | Reverse a payment within the undo window |
+| GET  | `/api/transactions?userId=` | List a user's transaction history |
 
-## API
+## Future improvements
 
-Base URL: `http://localhost:5000`
-
-Health:
-- `GET /health`
-
-Recipients:
-- `GET /api/recipients?userId=1`
-- `POST /api/recipients`
-
-Payments:
-- `POST /api/payments/check`
-- `POST /api/payments/confirm`
-- `POST /api/payments/undo`
-
-Transactions:
-- `GET /api/transactions?userId=1`
-
-### Check example
-
-```json
-{
-  "userId": 1,
-  "recipientId": 1,
-  "amount": 18000
-}
-```
-
-The check endpoint only evaluates payment context. It does not deduct balance or create a completed transaction.
-
-### Confirm example
-
-```json
-{
-  "userId": 1,
-  "recipientId": 1,
-  "amount": 18000,
-  "concernLevel": "HIGH",
-  "concernReasons": "Amount is much higher or lower than previous payments; A similar saved recipient exists"
-}
-```
-
-Confirmation deducts balance and creates the transaction atomically in a PostgreSQL transaction.
-
-### Undo example
-
-```json
-{
-  "transactionId": 1
-}
-```
-
-Undo reverses a completed prototype transaction and restores its amount atomically. The frontend is responsible for the 10-second countdown. This is a prototype simulation, not a claim that all real-world UPI payments can be universally reversed within 10 seconds.
-
-## Safety Engine
-
-SafeSend checks:
-- familiar recipient
-- unusual amount compared with previous payments
-- simple timing-pattern difference
-- similar saved recipient name
-
-Concern score:
-- new recipient: +25
-- similar recipient: +30
-- unusual amount: +30
-- unusual timing: +10
-
-Levels:
-- 0–20: LOW
-- 21–50: MODERATE
-- 51+: HIGH
-
-The engine identifies unusual payment characteristics; it does not prove fraud.
-
-## Demo
-
-Rahul has previous payments to Rahul Kumar of ₹2,000, ₹2,500 and ₹3,000. A check for ₹18,000 can therefore demonstrate the unusual-amount warning. Rahul K. is also present as a similar saved recipient.
-
-## Error handling
-
-Validation errors, missing users/recipients/transactions, insufficient balance, repeated undo, database failures and unknown routes return JSON errors without exposing server stack traces.
-
-Live database testing requires a local PostgreSQL instance and credentials configured in `.env`.
+- Real authentication and per-device session handling
+- Configurable/adaptive thresholds instead of fixed scoring weights
+- Push/SMS-style confirmation for the undo window
+- Support for recurring/scheduled payments
+- Exportable transaction statements

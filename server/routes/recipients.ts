@@ -1,46 +1,49 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import { query } from "../database";
 
 const router = Router();
 
-function positiveInt(value: unknown): number | null {
-  const n = Number(value);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-router.get("/", async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/recipients?userId=1
+router.get("/", async (req, res) => {
   try {
-    const userId = positiveInt(req.query.userId);
-    if (!userId) return res.status(400).json({ error: "Valid userId is required" });
-    const result = await query(
-      `SELECT id, name, upi_id AS "upiId", profession, created_at AS "createdAt"
-       FROM recipients WHERE user_id = $1 ORDER BY name`,
+    const userId = Number(req.query.userId);
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    const recipients = await query(
+      "SELECT * FROM recipients WHERE user_id = $1 ORDER BY name ASC",
       [userId]
     );
-    res.json(result.rows);
-  } catch (err) { next(err); }
+    res.json(recipients);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Couldn't load recipients right now." });
+  }
 });
 
-router.post("/", async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/recipients
+router.post("/", async (req, res) => {
   try {
-    const { userId, name, upiId, profession } = req.body ?? {};
-    const id = positiveInt(userId);
-    if (!id || typeof name !== "string" || !name.trim() || typeof upiId !== "string" || !upiId.trim()) {
-      return res.status(400).json({ error: "userId, name and upiId are required" });
+    const { userId, name, upiId, profession } = req.body;
+
+    if (!userId || !name || !upiId) {
+      return res.status(400).json({ error: "Name and UPI ID are required." });
     }
-    const user = await query("SELECT id FROM users WHERE id = $1", [id]);
-    if (user.rowCount === 0) return res.status(404).json({ error: "User not found" });
-    if (profession !== undefined && profession !== null && typeof profession !== "string") {
-      return res.status(400).json({ error: "profession must be a string when provided" });
+    const upiPattern = /^[\w.\-]+@[\w.\-]+$/;
+    if (!upiPattern.test(upiId)) {
+      return res.status(400).json({ error: "That doesn't look like a valid UPI ID." });
     }
-    const result = await query(
+
+    const rows = await query(
       `INSERT INTO recipients (user_id, name, upi_id, profession)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, upi_id AS "upiId", profession, created_at AS "createdAt"`,
-      [id, name.trim(), upiId.trim(), profession?.trim() || null]
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [userId, name.trim(), upiId.trim(), profession ? profession.trim() : null]
     );
-    res.status(201).json(result.rows[0]);
-  } catch (err) { next(err); }
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Couldn't save this recipient right now." });
+  }
 });
 
 export default router;

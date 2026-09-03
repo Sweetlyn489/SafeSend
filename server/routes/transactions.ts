@@ -1,26 +1,29 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import { query } from "../database";
 
 const router = Router();
 
-router.get("/", async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/transactions?userId=1
+router.get("/", async (req, res) => {
   try {
     const userId = Number(req.query.userId);
-    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: "Valid userId is required" });
-
-    const result = await query(
-      `SELECT t.id AS "transactionId", r.name AS "recipientName",
-              r.upi_id AS "upiId", t.amount, t.status,
-              t.concern_level AS "concernLevel", t.concern_reasons AS "concernReasons",
-              t.created_at AS "createdAt"
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    const rows = await query(
+      `SELECT t.id, t.amount, t.status, t.concern_level, t.concern_reasons, t.created_at,
+              r.name AS recipient_name, r.upi_id, r.profession
        FROM transactions t
        JOIN recipients r ON r.id = t.recipient_id
        WHERE t.user_id = $1
        ORDER BY t.created_at DESC`,
       [userId]
     );
-    res.json(result.rows);
-  } catch (err) { next(err); }
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Couldn't load transaction history right now." });
+  }
 });
 
 export default router;

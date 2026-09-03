@@ -1,54 +1,84 @@
+-- SafeSend database schema
+-- Run with: psql -U <user> -d safesend -f database/schema.sql
+
 DROP TABLE IF EXISTS transactions;
 DROP TABLE IF EXISTS recipients;
 DROP TABLE IF EXISTS users;
 
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(150) UNIQUE NOT NULL,
-  balance NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE recipients (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name VARCHAR(100) NOT NULL,
-  upi_id VARCHAR(150) NOT NULL,
-  profession VARCHAR(100) NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  name TEXT NOT NULL,
+  upi_id TEXT NOT NULL,
+  profession TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE transactions (
   id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  recipient_id INTEGER NOT NULL REFERENCES recipients(id) ON DELETE RESTRICT,
-  amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
-  status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED' CHECK (status IN ('COMPLETED','REVERSED')),
-  concern_level VARCHAR(20) CHECK (concern_level IS NULL OR concern_level IN ('LOW','MODERATE','HIGH')),
-  concern_reasons TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id INTEGER NOT NULL REFERENCES recipients(id) ON DELETE CASCADE,
+  amount NUMERIC(12, 2) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed', -- completed | reversed
+  concern_level TEXT, -- LOW | MODERATE | HIGH
+  concern_reasons JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE INDEX idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX idx_transactions_recipient_id ON transactions(recipient_id);
 CREATE INDEX idx_recipients_user_id ON recipients(user_id);
-CREATE INDEX idx_transactions_user_id_created_at ON transactions(user_id, created_at DESC);
-CREATE INDEX idx_transactions_recipient_id_created_at ON transactions(recipient_id, created_at DESC);
+
+-- ─────────────────────────────────────────────
+-- Demo seed data
+-- ─────────────────────────────────────────────
 
 INSERT INTO users (name, email, balance) VALUES
-('Rahul', 'rahul@example.com', 50000),
-('Priya', 'priya@example.com', 35000),
-('Arun', 'arun@example.com', 40000);
+  ('Rahul', 'rahul@demo.safesend', 50000),
+  ('Priya', 'priya@demo.safesend', 32000),
+  ('Arun', 'arun@demo.safesend', 18500);
 
+-- Rahul's recipients (user_id = 1)
 INSERT INTO recipients (user_id, name, upi_id, profession) VALUES
-(1, 'Rahul Kumar', 'rahul@upi', 'Electrician'),
-(1, 'Priya Sharma', 'priya@upi', 'Designer'),
-(1, 'Rohit Kumar', 'rohit@upi', 'Contractor'),
-(1, 'Rahul K.', 'rahulk@upi', NULL);
+  (1, 'Rahul Kumar', 'rahulkumar@upi', 'Electrician'),
+  (1, 'Priya Sharma', 'priyasharma@upi', 'Designer'),
+  (1, 'Rohit Kumar', 'rohitkumar@upi', 'Contractor'),
+  (1, 'City Power Board', 'citypower@upi', NULL);
 
+-- Priya's recipients (user_id = 2)
+INSERT INTO recipients (user_id, name, upi_id, profession) VALUES
+  (2, 'Arjun Mehta', 'arjunmehta@upi', 'Landlord'),
+  (2, 'Rahul', 'rahul.p@upi', NULL);
+
+-- Arun's recipients (user_id = 3)
+INSERT INTO recipients (user_id, name, upi_id, profession) VALUES
+  (3, 'Sana Traders', 'sanatraders@upi', 'Wholesaler');
+
+-- Rahul's transaction history: recurring small payments to Rahul Kumar (electrician)
+-- These establish the "usual range" of ₹2,000 - ₹3,000
 INSERT INTO transactions (user_id, recipient_id, amount, status, concern_level, concern_reasons, created_at) VALUES
-(1, 1, 2000, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '30 days'),
-(1, 1, 2500, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '20 days'),
-(1, 1, 3000, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '10 days'),
-(1, 2, 1500, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '8 days'),
-(1, 2, 1600, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '6 days'),
-(1, 3, 4000, 'COMPLETED', 'LOW', 'Recipient is familiar', CURRENT_TIMESTAMP - INTERVAL '15 days');
+  (1, 1, 2000, 'completed', 'LOW', '[]', now() - interval '90 days'),
+  (1, 1, 2500, 'completed', 'LOW', '[]', now() - interval '60 days'),
+  (1, 1, 3000, 'completed', 'LOW', '[]', now() - interval '30 days'),
+  (1, 1, 2800, 'completed', 'LOW', '[]', now() - interval '10 days');
+
+-- Recurring ~30-day bill, for the timing pattern demo. Three past payments
+-- establish a clear 30-day cadence; the most recent was only 15 days ago,
+-- so paying it again today reads as earlier than usual.
+INSERT INTO transactions (user_id, recipient_id, amount, status, concern_level, concern_reasons, created_at) VALUES
+  (1, 4, 1800, 'completed', 'LOW', '[]', now() - interval '75 days'),
+  (1, 4, 1800, 'completed', 'LOW', '[]', now() - interval '45 days'),
+  (1, 4, 1800, 'completed', 'LOW', '[]', now() - interval '15 days');
+
+-- Prior payments to Priya Sharma - establishes familiarity for the "normal" demo scenario
+INSERT INTO transactions (user_id, recipient_id, amount, status, concern_level, concern_reasons, created_at) VALUES
+  (1, 2, 4000, 'completed', 'LOW', '[]', now() - interval '45 days'),
+  (1, 2, 3800, 'completed', 'LOW', '[]', now() - interval '15 days');

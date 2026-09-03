@@ -1,113 +1,147 @@
-import { Router, Request, Response, NextFunction } from "express";
-import { pool, query } from "../database";
-import { runSafetyCheck, ConcernLevel } from "../safetyEngine";
+import { Router } from "express";
+import { query, pool } from "../database";
+import { runSafetyCheck } from "../services/safetyEngine";
 
 const router = Router();
 
-function validPositiveAmount(value: unknown): number | null {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0 ? amount : null;
-}
+const DEMO_UPI_PIN = process.env.DEMO_UPI_PIN || "123456";
+const UNDO_WINDOW_MS = 10_000;
 
-function validId(value: unknown): number | null {
-  const id = Number(value);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-router.post("/check", async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/payments/check  { userId, recipientId, amount }
+router.post("/check", async (req, res) => {
   try {
-    const userId = validId(req.body?.userId);
-    const recipientId = validId(req.body?.recipientId);
-    const amount = validPositiveAmount(req.body?.amount);
-    if (!userId || !recipientId || amount === null) {
-      return res.status(400).json({ error: "userId, recipientId and a positive amount are required" });
+    const { userId, recipientId, amount } = req.body;
+    if (!userId || !recipientId || !amount) {
+      return res.status(400).json({ error: "userId, recipientId and amount are required." });
     }
-    const user = await query("SELECT id FROM users WHERE id = $1", [userId]);
-    if (user.rowCount === 0) return res.status(404).json({ error: "User not found" });
-    const recipient = await query("SELECT id FROM recipients WHERE id = $1 AND user_id = $2", [recipientId, userId]);
-    if (recipient.rowCount === 0) return res.status(404).json({ error: "Recipient not found" });
+    if (Number(amount) <= 0) {
+      return res.status(400).json({ error: "Enter an amount greater than zero." });
+    }
 
-    const safety = await runSafetyCheck(userId, recipientId, amount);
-    res.json(safety);
-  } catch (err) { next(err); }
+    const users = await query("SELECT balance FROM users WHERE id = $1", [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: "User not found." });
+    }
+    if (Number(amount) > Number(users[0].balance)) {
+      return res.status(400).json({ error: "This amount is more than your available balance." });
+    }
+
+    const result = await runSafetyCheck(Number(userId), Number(recipientId), Number(amount));
+    res.json(result);
+  } catch (err: any) {
+    console.error(err);
+    if (err.message === "Recipient not found") {
+      return res.status(404).json({ error: "We couldn't find that recipient." });
+    }
+    res.status(500).json({ error: "Couldn't run the SafeSend Check right now." });
+  }
 });
 
-router.post("/confirm", async (req: Request, res: Response, next: NextFunction) => {
-  const userId = validId(req.body?.userId);
-  const recipientId = validId(req.body?.recipientId);
-  const amount = validPositiveAmount(req.body?.amount);
-  const concernLevel = req.body?.concernLevel;
-  const concernReasons = req.body?.concernReasons;
-
-  if (!userId || !recipientId || amount === null) {
-    return res.status(400).json({ error: "userId, recipientId and a positive amount are required" });
-  }
-  if (!["LOW", "MODERATE", "HIGH"].includes(concernLevel)) {
-    return res.status(400).json({ error: "Valid concernLevel is required" });
-  }
-  if (concernReasons !== undefined && typeof concernReasons !== "string") {
-    return res.status(400).json({ error: "concernReasons must be a string" });
-  }
-
+// POST /api/payments/confirm  { userId, recipientId, amount, pin, concernLevel, concernReasons }
+router.post("/confirm", async (req, res) => {
   const client = await pool.connect();
   try {
+    const { userId, recipientId, amount, pin, concernLevel, concernReasons } = req.body;
+
+    if (!userId || !recipientId || !amount || !pin) {
+      return res.status(400).json({ error: "Missing details needed to confirm this payment." });
+    }
+    if (pin !== DEMO_UPI_PIN) {
+      return res.status(401).json({ error: "Incorrect PIN. Please try again." });
+    }
+
     await client.query("BEGIN");
-    const userResult = await client.query<{ id: number; balance: string }>(
-      "SELECT id, balance FROM users WHERE id = $1 FOR UPDATE", [userId]
-    );
-    if (userResult.rowCount === 0) throw Object.assign(new Error("User not found"), { status: 404 });
-    const recipientResult = await client.query(
-      "SELECT id FROM recipients WHERE id = $1 AND user_id = $2", [recipientId, userId]
-    );
-    if (recipientResult.rowCount === 0) throw Object.assign(new Error("Recipient not found"), { status: 404 });
 
-    const balance = Number(userResult.rows[0].balance);
-    if (balance < amount) throw Object.assign(new Error("Insufficient balance"), { status: 400 });
+    const users = await client.query("SELECT balance FROM users WHERE id = $1 FOR UPDATE", [
+      userId,
+    ]);
+    if (users.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "User not found." });
+    }
 
-    await client.query("UPDATE users SET balance = balance - $1 WHERE id = $2", [amount, userId]);
-    const tx = await client.query<{ id: number }>(
+    const balance = Number(users.rows[0].balance);
+    if (Number(amount) > balance) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "This amount is more than your available balance." });
+    }
+
+    const newBalance = balance - Number(amount);
+    await client.query("UPDATE users SET balance = $1 WHERE id = $2", [newBalance, userId]);
+
+    const txnResult = await client.query(
       `INSERT INTO transactions (user_id, recipient_id, amount, status, concern_level, concern_reasons)
-       VALUES ($1, $2, $3, 'COMPLETED', $4, $5) RETURNING id`,
-      [userId, recipientId, amount, concernLevel as ConcernLevel, concernReasons ?? null]
+       VALUES ($1, $2, $3, 'completed', $4, $5) RETURNING *`,
+      [userId, recipientId, amount, concernLevel || null, JSON.stringify(concernReasons || [])]
     );
-    const remaining = await client.query<{ balance: string }>("SELECT balance FROM users WHERE id = $1", [userId]);
+
     await client.query("COMMIT");
+
     res.status(201).json({
-      success: true,
-      transactionId: tx.rows[0].id,
-      remainingBalance: Number(remaining.rows[0].balance)
+      transaction: txnResult.rows[0],
+      balance: newBalance,
+      undoWindowMs: UNDO_WINDOW_MS,
     });
-  } catch (err: any) {
+  } catch (err) {
     await client.query("ROLLBACK");
-    if (err?.status) return res.status(err.status).json({ error: err.message });
-    next(err);
-  } finally { client.release(); }
+    console.error(err);
+    res.status(500).json({ error: "The payment couldn't be completed. Please try again." });
+  } finally {
+    client.release();
+  }
 });
 
-router.post("/undo", async (req: Request, res: Response, next: NextFunction) => {
-  const transactionId = validId(req.body?.transactionId);
-  if (!transactionId) return res.status(400).json({ error: "Valid transactionId is required" });
-
+// POST /api/payments/undo  { transactionId }
+router.post("/undo", async (req, res) => {
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-    const tx = await client.query<{ id: number; user_id: number; amount: string; status: string }>(
-      "SELECT id, user_id, amount, status FROM transactions WHERE id = $1 FOR UPDATE", [transactionId]
-    );
-    if (tx.rowCount === 0) throw Object.assign(new Error("Transaction not found"), { status: 404 });
-    if (tx.rows[0].status === "REVERSED") throw Object.assign(new Error("Transaction already reversed"), { status: 400 });
-    if (tx.rows[0].status !== "COMPLETED") throw Object.assign(new Error("Transaction cannot be undone"), { status: 400 });
+    const { transactionId } = req.body;
+    if (!transactionId) {
+      return res.status(400).json({ error: "transactionId is required." });
+    }
 
-    await client.query("UPDATE users SET balance = balance + $1 WHERE id = $2", [tx.rows[0].amount, tx.rows[0].user_id]);
-    await client.query("UPDATE transactions SET status = 'REVERSED' WHERE id = $1", [transactionId]);
-    const balance = await client.query<{ balance: string }>("SELECT balance FROM users WHERE id = $1", [tx.rows[0].user_id]);
+    await client.query("BEGIN");
+
+    const txns = await client.query("SELECT * FROM transactions WHERE id = $1 FOR UPDATE", [
+      transactionId,
+    ]);
+    if (txns.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Transaction not found." });
+    }
+
+    const txn = txns.rows[0];
+    if (txn.status === "reversed") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "This payment has already been reversed." });
+    }
+
+    const elapsed = Date.now() - new Date(txn.created_at).getTime();
+    if (elapsed > UNDO_WINDOW_MS + 2000) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "The undo window for this payment has passed." });
+    }
+
+    await client.query("UPDATE transactions SET status = 'reversed' WHERE id = $1", [
+      transactionId,
+    ]);
+
+    const users = await client.query("SELECT balance FROM users WHERE id = $1 FOR UPDATE", [
+      txn.user_id,
+    ]);
+    const newBalance = Number(users.rows[0].balance) + Number(txn.amount);
+    await client.query("UPDATE users SET balance = $1 WHERE id = $2", [newBalance, txn.user_id]);
+
     await client.query("COMMIT");
-    res.json({ success: true, transactionId, status: "REVERSED", restoredAmount: Number(tx.rows[0].amount), remainingBalance: Number(balance.rows[0].balance) });
-  } catch (err: any) {
+
+    res.json({ status: "reversed", balance: newBalance });
+  } catch (err) {
     await client.query("ROLLBACK");
-    if (err?.status) return res.status(err.status).json({ error: err.message });
-    next(err);
-  } finally { client.release(); }
+    console.error(err);
+    res.status(500).json({ error: "Couldn't reverse this payment right now." });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;
