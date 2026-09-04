@@ -88,7 +88,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 function localUsers() { return loadDemoState().users; }
 function localUser(id: number) { return localUsers().find((u) => u.id === id); }
-function localRecipients(userId: number) { return loadDemoState().recipients.filter((r) => r.user_id === userId && r.is_saved !== false); }
+function localRecipients(userId: number) { return loadDemoState().recipients.filter((r) => r.user_id === userId); }
 function localTransactions(userId: number) {
   return loadDemoState().transactions.filter((t) => {
     const recipient = loadDemoState().recipients.find((r) => r.name === t.recipient_name && r.upi_id === t.upi_id);
@@ -161,68 +161,24 @@ export const api = {
   getUsers: async () => { try { const data = await request<User[]>("/users"); setDemoMode(false); return data; } catch { setDemoMode(true); return localUsers(); } },
   getUser: async (id: number) => { try { const data = await request<User>(`/users/${id}`); setDemoMode(false); return data; } catch { setDemoMode(true); const u = localUser(id); if (!u) throw new Error("Demo account not found."); return u; } },
   getRecipients: async (userId: number) => { try { const data = await request<Recipient[]>(`/recipients?userId=${userId}`); setDemoMode(false); return data; } catch { setDemoMode(true); return localRecipients(userId); } },
-  addRecipient: async (payload: { userId:number; name:string; upiId:string; profession?:string }) => {
-    try { const data = await request<Recipient>("/recipients", {method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; }
-    catch { setDemoMode(true); const state=loadDemoState(); const item:Recipient={id:Math.max(0,...state.recipients.map(r=>r.id))+1,user_id:payload.userId,name:payload.name.trim(),upi_id:payload.upiId.trim(),profession:payload.profession?.trim()||null,is_saved:true}; state.recipients.push(item); saveDemoState(state); return item; }
-  },
-  resolveRecipient: async (payload: {userId:number; name:string; upiId:string}) => {
-    try { const data = await request<Recipient>("/recipients/resolve",{method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; }
-    catch {
-      setDemoMode(true);
-      const state=loadDemoState();
-      const item:Recipient={id:Math.max(0,...state.recipients.map(r=>r.id))+1,user_id:payload.userId,name:payload.name.trim(),upi_id:payload.upiId.trim(),profession:null,is_saved:false};
-      state.recipients.push(item); saveDemoState(state); return item;
-    }
-  },
+  addRecipient: async (payload: { userId:number; name:string; upiId:string; profession?:string }) => { try { const data = await request<Recipient>("/recipients", {method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; } catch { setDemoMode(true); const state=loadDemoState(); const item:Recipient={id:Math.max(0,...state.recipients.map(r=>r.id))+1,user_id:payload.userId,name:payload.name.trim(),upi_id:payload.upiId.trim(),profession:payload.profession?.trim()||null}; state.recipients.push(item); saveDemoState(state); return item; } },
   getTransactions: async (userId: number) => { try { const data = await request<Transaction[]>(`/transactions?userId=${userId}`); setDemoMode(false); return data; } catch { setDemoMode(true); return localTransactions(userId); } },
-  checkPayment: async (payload: {userId:number;recipientId:number;amount:number}) => {
-    try { const data=await request<SafetyCheckResult>("/payments/check",{method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; }
-    catch { setDemoMode(true); return localSafetyCheck(payload.userId,payload.recipientId,payload.amount); }
-  },
+  checkPayment: async (payload: {userId:number;recipientId:number;amount:number}) => { try { const data=await request<SafetyCheckResult>("/payments/check",{method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; } catch { setDemoMode(true); return localSafetyCheck(payload.userId,payload.recipientId,payload.amount); } },
   confirmPayment: async (payload: {userId:number;recipientId:number;amount:number;pin:string;concernLevel:string;concernReasons:unknown}) => {
-    try { const data=await request<{transaction:any;balance:number;holdWindowMs:number;holdExpiresAt:string}>("/payments/confirm",{method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; }
+    try { const data=await request<{transaction:any;balance:number;undoWindowMs:number}>("/payments/confirm",{method:"POST",body:JSON.stringify(payload)}); setDemoMode(false); return data; }
     catch {
-      setDemoMode(true);
-      if (payload.pin !== "123456") throw new Error("Incorrect PIN. Try 123456 for the demo.");
+      setDemoMode(true); if (payload.pin !== "123456") throw new Error("Incorrect PIN. Try 123456 for the demo.");
       const state=loadDemoState(); const user=state.users.find(u=>u.id===payload.userId); const recipient=state.recipients.find(r=>r.id===payload.recipientId);
-      if (!user || !recipient) throw new Error("Demo payment details could not be found.");
-      if (payload.amount>user.balance) throw new Error("This amount is more than your available balance.");
-      user.balance -= payload.amount;
-      const expiresAt=new Date(Date.now()+10000).toISOString();
-      const transaction:Transaction={id:state.nextTransactionId++,amount:payload.amount,status:"pending_hold",concern_level:payload.concernLevel as any,concern_reasons:payload.concernReasons as any,created_at:new Date().toISOString(),recipient_name:recipient.name,upi_id:recipient.upi_id,profession:recipient.profession};
-      (transaction as any).hold_expires_at=expiresAt;
-      state.transactions.push(transaction); saveDemoState(state);
-      return {transaction,balance:user.balance,holdWindowMs:10000,holdExpiresAt:expiresAt};
+      if (!user || !recipient) throw new Error("Demo payment details could not be found."); if (payload.amount>user.balance) throw new Error("This amount is more than your available balance.");
+      user.balance -= payload.amount; const transaction:Transaction={id:state.nextTransactionId++,amount:payload.amount,status:"completed",concern_level:payload.concernLevel as any,concern_reasons:payload.concernReasons as any,created_at:new Date().toISOString(),recipient_name:recipient.name,upi_id:recipient.upi_id,profession:recipient.profession}; state.transactions.push(transaction); saveDemoState(state);
+      return {transaction,balance:user.balance,undoWindowMs:10000};
     }
   },
-  finalizePayment: async (transactionId:number) => {
-    try { const data=await request<{status:string}>("/payments/finalize",{method:"POST",body:JSON.stringify({transactionId})}); setDemoMode(false); return data; }
+  undoPayment: async (transactionId:number) => {
+    try { const data=await request<{status:string;balance:number}>("/payments/undo",{method:"POST",body:JSON.stringify({transactionId})}); setDemoMode(false); return data; }
     catch {
-      setDemoMode(true); const state=loadDemoState(); const txn:any=state.transactions.find(t=>t.id===transactionId);
-      if(!txn) throw new Error("Transaction not found.");
-      if(txn.status==="completed") return {status:"completed"};
-      if(txn.status==="reversed") throw new Error("This payment was cancelled.");
-      const expires=txn.hold_expires_at ? new Date(txn.hold_expires_at).getTime() : new Date(txn.created_at).getTime()+10000;
-      if(Date.now()<expires) throw new Error("SafeHold is still active.");
-      txn.status="completed"; delete txn.hold_expires_at; saveDemoState(state); return {status:"completed"};
+      setDemoMode(true); const state=loadDemoState(); const txn=state.transactions.find(t=>t.id===transactionId); if(!txn) throw new Error("Transaction not found."); if(txn.status==="reversed") throw new Error("This payment has already been reversed."); if(Date.now()-new Date(txn.created_at).getTime()>12000) throw new Error("The undo window for this payment has passed.");
+      const recipient=state.recipients.find(r=>r.name===txn.recipient_name && r.upi_id===txn.upi_id); const user=recipient&&state.users.find(u=>u.id===recipient.user_id); if(!user) throw new Error("Demo account not found."); txn.status="reversed"; user.balance+=Number(txn.amount); saveDemoState(state); return {status:"reversed",balance:user.balance};
     }
   },
-  cancelPayment: async (transactionId:number) => {
-    try { const data=await request<{status:string;balance:number}>("/payments/cancel",{method:"POST",body:JSON.stringify({transactionId})}); setDemoMode(false); return data; }
-    catch {
-      setDemoMode(true); const state=loadDemoState(); const txn:any=state.transactions.find(t=>t.id===transactionId);
-      if(!txn) throw new Error("Transaction not found.");
-      if(txn.status==="reversed") throw new Error("This payment has already been cancelled.");
-      if(txn.status==="completed") throw new Error("The payment has already completed.");
-      const expires=txn.hold_expires_at ? new Date(txn.hold_expires_at).getTime() : new Date(txn.created_at).getTime()+10000;
-      if(Date.now()>expires) throw new Error("The SafeHold window has expired.");
-      const user=state.users.find(u=>u.id===1); // replaced below
-      const owner=state.recipients.find(r=>r.name===txn.recipient_name && r.upi_id===txn.upi_id);
-      const sender=owner && state.users.find(u=>u.id===owner.user_id);
-      if(!sender) throw new Error("Demo account not found.");
-      txn.status="reversed"; delete txn.hold_expires_at; sender.balance+=Number(txn.amount); saveDemoState(state); return {status:"reversed",balance:sender.balance};
-    }
-  },
-  // Backward-compatible alias for older UI code.
-  undoPayment: async (transactionId:number) => api.cancelPayment(transactionId),
 };

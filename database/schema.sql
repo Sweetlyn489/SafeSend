@@ -19,6 +19,7 @@ CREATE TABLE recipients (
   name TEXT NOT NULL,
   upi_id TEXT NOT NULL,
   profession TEXT,
+  is_saved BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -27,9 +28,10 @@ CREATE TABLE transactions (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   recipient_id INTEGER NOT NULL REFERENCES recipients(id) ON DELETE CASCADE,
   amount NUMERIC(12, 2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'completed', -- completed | reversed
+  status TEXT NOT NULL DEFAULT 'completed', -- pending_hold | completed | reversed
   concern_level TEXT, -- LOW | MODERATE | HIGH
   concern_reasons JSONB,
+  hold_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

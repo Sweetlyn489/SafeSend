@@ -20,8 +20,13 @@ app.use("/api/transactions", transactionsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/users", usersRouter);
 
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+app.get("/api/health", async (_req, res) => {
+  try {
+    await import("./database").then(({ pool }) => pool.query("SELECT 1"));
+    res.json({ status: "ok", database: "connected" });
+  } catch {
+    res.json({ status: "ok", database: "offline", demoFallback: true });
+  }
 });
 
 app.listen(PORT, () => {
